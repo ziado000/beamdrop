@@ -12,24 +12,7 @@ no Bluetooth, no pairing.**
    A progress bar fills as pieces arrive. When it hits 100%, the file downloads.
 
 The transfer channel is literally light. Nothing else connects the two devices.
-
-### The airgap test
-
-Open the site on both devices once (the service worker caches everything), then put
-**both devices in airplane mode**. Transfer still works perfectly — proof that no
-network is involved.
-
-## Why missed frames don't matter
-
-Beamdrop uses a **fountain code** (Luby Transform, the same idea behind
-[txqr](https://github.com/divan/txqr)). The file is split into K chunks; each displayed
-frame is a random XOR-combination of chunks derived from a seed in the frame header.
-The receiver can start watching at *any* moment, miss *any* frames, and still rebuild
-the file once it has caught roughly K useful frames — the peeling decoder does the rest.
-Our test suite verifies full recovery even when **50% of frames are dropped**.
-
-- First pass is *systematic* (plain chunks in order) so an attentive receiver finishes in one pass.
-- Every later frame is a fresh combination, so the progress bar only ever goes up.
+You can start watching mid-beam and the progress bar only ever goes up.
 
 ## Tuning
 
@@ -58,9 +41,8 @@ Then open `http://localhost:8000`. On GitHub Pages it just works (HTTPS included
 node test/roundtrip.test.js
 ```
 
-Runs the full pipeline offline: bytes → fountain encoder → rendered frames (with the
-shifting color palette) → jsQR decode → fountain decoder → bytes, under simulated
-frame loss up to 50%.
+Runs the full encode → render → scan → decode pipeline offline and verifies the
+bytes come back identical.
 
 ## Stack
 
