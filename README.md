@@ -58,4 +58,8 @@ bytes come back identical.
 
 Zero build step, zero network dependencies at runtime. Vanilla JS + two vendored
 libraries: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
-(encode) and [jsQR](https://github.com/cozmo/jsQR) (decode). MIT-licensed.
+(encode) and [jsQR](https://github.com/cozmo/jsQR) (decode).
+
+## License
+
+[MIT](LICENSE) — use it, remix it, ship it. Contributions welcome via pull request.
