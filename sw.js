@@ -1,5 +1,5 @@
 /* Beamdrop service worker — cache everything so the app works with internet cut. */
-const CACHE = 'beamdrop-v2';
+const CACHE = 'beamdrop-v3';
 const ASSETS = [
   './',
   'index.html',
@@ -11,8 +11,6 @@ const ASSETS = [
   'send.js',
   'receive.js',
   'sw.js',
-  'vendor/qrcode.js',
-  'vendor/jsQR.js',
 ];
 
 self.addEventListener('install', (e) => {

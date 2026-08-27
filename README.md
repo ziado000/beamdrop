@@ -24,24 +24,25 @@ No install, no account — open it in any browser, on any device with a screen o
 The transfer channel is literally light. Nothing else connects the two devices.
 You can start watching mid-beam and the progress bar only ever goes up.
 
-## Two styles
+## The Aurora honeycomb
 
-- **Aurora honeycomb** (default) — a living honeycomb where the colors *are* the data:
-  every hexagon carries 3 bits as one of 8 hues, and the whole palette drifts through
-  the spectrum each frame. Reed-Solomon error correction shrugs off misread cells.
-- **Classic QR** — maximum density and camera compatibility, with a hue-cycling skin.
+The code is a living honeycomb where the colors *are* the data: every hexagon
+carries 3 bits as one of 8 hues, and the whole palette drifts through the
+spectrum each frame like an aurora. Calibration cells drift with it, so the
+receiver re-learns the palette on every frame under any lighting, and
+Reed-Solomon error correction shrugs off misread cells.
 
 ## Tuning
 
-| Setting | Aurora | Classic QR | Tradeoff |
-|---|---|---|---|
-| Compact | 182 B/frame | 200 B/frame | Easiest to scan at distance |
-| Balanced | 303 B/frame | 450 B/frame | Good default |
-| Dense | 478 B/frame | 800 B/frame | Fastest, hold the camera closer |
-| Speed | 5 · 8 · 12 fps | 5 · 8 · 12 fps | Faster needs a steadier camera |
+| Setting | Per frame | Tradeoff |
+|---|---|---|
+| Compact | 182 B | Easiest to scan at distance |
+| Balanced | 303 B | Good default |
+| Dense | 478 B | Fastest, hold the camera closer |
+| Speed | 5 · 8 · 12 fps | Faster needs a steadier camera |
 
-Dense × Rapid moves ~5.7 KB/s (Aurora) or ~9.6 KB/s (Classic) — a 100 KB photo in
-roughly 11–18 seconds of clean scanning. Bigger files scale linearly.
+Dense × Rapid moves ~5.7 KB/s — a 100 KB photo in under 20 seconds of clean
+scanning. Bigger files scale linearly.
 
 ## Running locally
 
@@ -58,17 +59,18 @@ Then open `http://localhost:8000`. On GitHub Pages it just works (HTTPS included
 ## Tests
 
 ```sh
-node test/roundtrip.test.js
+node test/hex.test.js
 ```
 
-Runs the full encode → render → scan → decode pipeline offline and verifies the
-bytes come back identical.
+Runs the full encode → render → scan → decode pipeline offline — including a
+simulated camera (perspective tilt, blur, color tint, sensor noise) — and
+verifies the bytes come back identical.
 
 ## Stack
 
-Zero build step, zero network dependencies at runtime. Vanilla JS + two vendored
-libraries: [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator)
-(encode) and [jsQR](https://github.com/cozmo/jsQR) (decode).
+Zero build step, zero dependencies, zero network at runtime. Every line —
+the fountain code, the honeycomb codec, the Reed-Solomon error correction,
+and the camera decoder — is vanilla JavaScript in this repo.
 
 ## License
 
