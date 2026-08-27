@@ -1,0 +1,12 @@
+# secrets — never commit these
+.env
+.env.*
+*.pem
+*.key
+*credentials*
+*token*
+
+# junk
+node_modules/
+Thumbs.db
+.DS_Store

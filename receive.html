@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beamdrop — Receive</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>&#128225;</text></svg>" />
+</head>
+<body>
+  <header>
+    <a href="index.html" class="logo">Beamdrop</a>
+    <span class="badge">receiver</span>
+    <nav>
+      <a href="send.html">Send instead</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="intro" class="card" style="max-width: 620px; text-align: center;">
+      <p style="font-size: 2.4rem;">📷</p>
+      <h2 style="margin: 0.6rem 0;">Catch a beam</h2>
+      <p class="note" style="margin: 0 auto 1.4rem;">Point this camera at a Beamdrop screen.
+        You can start mid-beam — missed frames don't matter, the bar only ever goes up.</p>
+      <button id="camBtn" class="btn teal">Open camera</button>
+      <p class="note" id="camError" style="color: #f87171; margin-top: 1rem;"></p>
+    </section>
+
+    <section id="scan" class="stage hidden">
+      <video id="cam" class="cam" playsinline muted></video>
+      <div class="card" style="max-width: 560px;">
+        <div class="progress"><div class="fill" id="rxFill"></div></div>
+        <div class="stats" style="margin-top: 0.6rem;">
+          <span id="rxLeft">waiting for first frame…</span>
+          <span id="rxRight"></span>
+        </div>
+      </div>
+      <button id="cancelBtn" class="btn ghost">Cancel</button>
+    </section>
+
+    <section id="done" class="stage hidden">
+      <div class="card" style="max-width: 560px; text-align: center;">
+        <p style="font-size: 2.6rem;">🎉</p>
+        <h2 style="margin: 0.5rem 0;">File received</h2>
+        <div class="filecard" style="justify-content: center; margin: 1rem 0;">
+          <div class="fico">📄</div>
+          <div style="text-align: left;">
+            <div class="fname" id="doneName"></div>
+            <div class="fmeta" id="doneMeta"></div>
+          </div>
+        </div>
+        <div class="preview" id="preview"></div>
+        <div style="display: flex; gap: 0.8rem; justify-content: center; margin-top: 1.2rem;">
+          <a id="dlBtn" class="btn" download>Download</a>
+          <button id="againBtn" class="btn ghost">Receive another</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <canvas id="grab" class="hidden"></canvas>
+
+  <script src="vendor/jsQR.js"></script>
+  <script src="fountain.js"></script>
+  <script src="receive.js"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>

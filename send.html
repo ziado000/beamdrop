@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beamdrop — Send</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>&#128225;</text></svg>" />
+</head>
+<body>
+  <header>
+    <a href="index.html" class="logo">Beamdrop</a>
+    <span class="badge">sender</span>
+    <nav>
+      <a href="receive.html">Receive instead</a>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Step 1: pick a file + tune the beam -->
+    <section id="setup" class="card" style="max-width: 620px;">
+      <div id="drop" class="drop">
+        <p style="font-size: 2rem;">🗂️</p>
+        <p><strong>Drop a file here</strong> or tap to choose</p>
+        <p style="font-size: 0.82rem; margin-top: 0.4rem;">Images, video, audio, zip, anything.</p>
+        <input id="fileInput" type="file" class="hidden" />
+      </div>
+
+      <div id="fileInfo" class="filecard hidden" style="margin-top: 1.2rem;">
+        <div class="fico">📄</div>
+        <div>
+          <div class="fname" id="fName"></div>
+          <div class="fmeta" id="fMeta"></div>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top: 1.4rem;">
+        <div class="field">
+          <label>Density — how much data per frame</label>
+          <div class="seg" id="densitySeg">
+            <button data-v="200">Compact</button>
+            <button data-v="450" class="active">Balanced</button>
+            <button data-v="800">Dense</button>
+          </div>
+        </div>
+        <div class="field">
+          <label>Speed — frames per second</label>
+          <div class="seg" id="speedSeg">
+            <button data-v="4">Calm</button>
+            <button data-v="7" class="active">Steady</button>
+            <button data-v="12">Rapid</button>
+          </div>
+        </div>
+      </div>
+
+      <p class="note" id="estimate" style="margin: 1.2rem auto 1rem;"></p>
+      <div style="text-align: center;">
+        <button id="startBtn" class="btn" disabled>Start beaming ✦</button>
+      </div>
+    </section>
+
+    <!-- Step 2: the beam -->
+    <section id="stage" class="stage hidden">
+      <canvas id="beam" class="beam" width="720" height="720"></canvas>
+      <div class="card" style="max-width: 560px;">
+        <div class="progress"><div class="fill" id="cycleFill"></div></div>
+        <div class="stats" style="margin-top: 0.6rem;">
+          <span id="statLeft"></span>
+          <span id="statRight"></span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.8rem;">
+        <button id="pauseBtn" class="btn ghost">Pause</button>
+        <button id="stopBtn" class="btn ghost">New file</button>
+      </div>
+      <p class="note">Keep this screen bright and steady. The receiver can start watching at any
+        moment — frames repeat in fresh combinations until it has everything.</p>
+    </section>
+  </main>
+
+  <script src="vendor/qrcode.js"></script>
+  <script src="fountain.js"></script>
+  <script src="send.js"></script>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Beamdrop — send files as light</title>
+  <meta name="description" content="Transfer any file between devices using an animated, color-shifting code. No internet, no cables, no pairing — just a screen and a camera." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='0.9em' font-size='90'>&#128225;</text></svg>" />
+</head>
+<body>
+  <header>
+    <a href="index.html" class="logo">Beamdrop</a>
+    <span class="badge">100% offline</span>
+    <nav>
+      <a href="send.html">Send</a>
+      <a href="receive.html">Receive</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="hero">
+      <h1>Send files as <span>light</span>.</h1>
+      <p>Any file, any device with a camera. No internet, no cables, no Bluetooth, no pairing.
+         One screen shows a living, color-shifting code — the other watches it and rebuilds your file.</p>
+    </div>
+
+    <div class="grid2">
+      <a class="cardlink" href="send.html">
+        <div class="card action-card">
+          <div class="icon">📡</div>
+          <h2>Send a file</h2>
+          <p>Pick a file and this screen starts beaming it as an animated code.</p>
+        </div>
+      </a>
+      <a class="cardlink" href="receive.html">
+        <div class="card action-card">
+          <div class="icon">📷</div>
+          <h2>Receive a file</h2>
+          <p>Point your camera at a beam. Watch the progress bar fill, then download.</p>
+        </div>
+      </a>
+    </div>
+
+    <p class="note">
+      Try the airgap test: open this page on both devices, turn on airplane mode on both,
+      and transfer a photo. It still works — the only network is light itself.
+    </p>
+  </main>
+
+  <footer>Frames use fountain coding — miss as many as you like, the file still arrives.</footer>
+  <script>
+    if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</body>
+</html>
