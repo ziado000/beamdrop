@@ -63,10 +63,15 @@
       if (grab.width !== w) { grab.width = w; grab.height = h; }
       gctx.drawImage(video, 0, 0, w, h);
       const img = gctx.getImageData(0, 0, w, h);
-      const code = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
-      if (code && code.binaryData && code.binaryData.length) {
+      // aurora honeycomb first; classic QR as fallback
+      let packet = HexCodec.decodeFrame(img.data, w, h);
+      if (!packet) {
+        const code = jsQR(img.data, w, h, { inversionAttempts: 'dontInvert' });
+        if (code && code.binaryData && code.binaryData.length) packet = new Uint8Array(code.binaryData);
+      }
+      if (packet) {
         packetsSeen++;
-        decoder.addPacket(new Uint8Array(code.binaryData));
+        decoder.addPacket(packet);
         updateProgress();
         if (decoder.done) { finish(); return; }
       }

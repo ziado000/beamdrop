@@ -34,20 +34,28 @@
         </div>
       </div>
 
-      <div class="grid2" style="margin-top: 1.4rem;">
+      <div class="field" style="margin-top: 1.4rem;">
+        <label>Style</label>
+        <div class="seg" id="modeSeg">
+          <button data-v="aurora" class="active">Aurora honeycomb ✦</button>
+          <button data-v="classic">Classic QR</button>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top: 1.2rem;">
         <div class="field">
           <label>Density — how much data per frame</label>
           <div class="seg" id="densitySeg">
-            <button data-v="200">Compact</button>
-            <button data-v="450" class="active">Balanced</button>
-            <button data-v="800">Dense</button>
+            <button data-v="0">Compact</button>
+            <button data-v="1" class="active">Balanced</button>
+            <button data-v="2">Dense</button>
           </div>
         </div>
         <div class="field">
           <label>Speed — frames per second</label>
           <div class="seg" id="speedSeg">
-            <button data-v="4">Calm</button>
-            <button data-v="7" class="active">Steady</button>
+            <button data-v="5">Calm</button>
+            <button data-v="8" class="active">Steady</button>
             <button data-v="12">Rapid</button>
           </div>
         </div>
@@ -80,6 +88,7 @@
 
   <script src="vendor/qrcode.js"></script>
   <script src="fountain.js"></script>
+  <script src="hexcodec.js"></script>
   <script src="send.js"></script>
   <script>
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {

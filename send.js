@@ -19,14 +19,23 @@
   const pauseBtn = document.getElementById('pauseBtn');
   const stopBtn = document.getElementById('stopBtn');
 
+  const AURORA_COLS = [26, 34, 42];
+  const CLASSIC_CHUNK = [200, 450, 800];
+
   let file = null;
   let fileBytes = null;
-  let chunkSize = 450;
-  let fps = 7;
+  let mode = 'aurora';
+  let density = 1;
+  let fps = 8;
   let encoder = null;
   let timer = null;
   let paused = false;
   let framesSent = 0;
+
+  function currentChunk() {
+    if (mode === 'aurora') return HexCodec.capacityFor(AURORA_COLS[density]) - 19;
+    return CLASSIC_CHUNK[density];
+  }
 
   // ---- setup UI ----
   function segInit(id, onPick) {
@@ -36,12 +45,13 @@
       if (!btn) return;
       seg.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
       btn.classList.add('active');
-      onPick(Number(btn.dataset.v));
+      onPick(btn.dataset.v);
       updateEstimate();
     });
   }
-  segInit('densitySeg', (v) => { chunkSize = v; });
-  segInit('speedSeg', (v) => { fps = v; });
+  segInit('modeSeg', (v) => { mode = v; });
+  segInit('densitySeg', (v) => { density = Number(v); });
+  segInit('speedSeg', (v) => { fps = Number(v); });
 
   drop.addEventListener('click', () => fileInput.click());
   drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
@@ -71,10 +81,11 @@
 
   function updateEstimate() {
     if (!fileBytes) { estimate.textContent = ''; return; }
-    const K = Math.max(1, Math.ceil((fileBytes.length + 100) / chunkSize));
-    // A clean watch needs ~1.1–1.5 cycles depending on loss; call it one pass.
+    const chunk = currentChunk();
+    const K = Math.max(1, Math.ceil((fileBytes.length + 100) / chunk));
     const secs = Math.ceil(K / fps);
-    estimate.textContent = `≈ ${K} frames per pass · about ${secs}s per pass at ${fps} fps. ` +
+    const rate = ((chunk * fps) / 1024).toFixed(1);
+    estimate.textContent = `≈ ${K} frames per pass · about ${secs}s per pass at ${fps} fps (${rate} KB/s). ` +
       `Bigger files or Compact density mean longer scans — that's the tradeoff.`;
   }
 
@@ -84,7 +95,7 @@
       name: file.name,
       type: file.type || 'application/octet-stream',
       size: file.size,
-    }, chunkSize);
+    }, currentChunk());
     framesSent = 0;
     paused = false;
     pauseBtn.textContent = 'Pause';
@@ -125,10 +136,15 @@
     const packet = encoder.nextPacket();
     framesSent++;
 
-    const qr = qrcode(0, 'L');
-    qr.addData(bytesToLatin1(packet), 'Byte');
-    qr.make();
-    renderArtFrame(qr, framesSent);
+    if (mode === 'aurora') {
+      const buf = HexCodec.render(packet, AURORA_COLS[density], (framesSent * 11) % 360);
+      ctx.putImageData(new ImageData(buf, HexCodec.CANVAS, HexCodec.CANVAS), 0, 0);
+    } else {
+      const qr = qrcode(0, 'L');
+      qr.addData(bytesToLatin1(packet), 'Byte');
+      qr.make();
+      renderArtFrame(qr, framesSent);
+    }
 
     const K = encoder.K;
     const pass = Math.floor((framesSent - 1) / K) + 1;

@@ -24,14 +24,24 @@ No install, no account — open it in any browser, on any device with a screen o
 The transfer channel is literally light. Nothing else connects the two devices.
 You can start watching mid-beam and the progress bar only ever goes up.
 
+## Two styles
+
+- **Aurora honeycomb** (default) — a living honeycomb where the colors *are* the data:
+  every hexagon carries 3 bits as one of 8 hues, and the whole palette drifts through
+  the spectrum each frame. Reed-Solomon error correction shrugs off misread cells.
+- **Classic QR** — maximum density and camera compatibility, with a hue-cycling skin.
+
 ## Tuning
 
-| Setting | Options | Tradeoff |
-|---|---|---|
-| Density | Compact 200 B · Balanced 450 B · Dense 800 B per frame | Denser = fewer frames but harder to scan at distance |
-| Speed | 4 · 7 · 12 fps | Faster = shorter transfer but needs a steadier camera |
+| Setting | Aurora | Classic QR | Tradeoff |
+|---|---|---|---|
+| Compact | 182 B/frame | 200 B/frame | Easiest to scan at distance |
+| Balanced | 303 B/frame | 450 B/frame | Good default |
+| Dense | 478 B/frame | 800 B/frame | Fastest, hold the camera closer |
+| Speed | 5 · 8 · 12 fps | 5 · 8 · 12 fps | Faster needs a steadier camera |
 
-A 100 KB photo at Balanced/Steady takes roughly 30–40 seconds. Bigger files scale linearly.
+Dense × Rapid moves ~5.7 KB/s (Aurora) or ~9.6 KB/s (Classic) — a 100 KB photo in
+roughly 11–18 seconds of clean scanning. Bigger files scale linearly.
 
 ## Running locally
 
