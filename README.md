@@ -4,6 +4,16 @@
 to another device's camera as a living, color-shifting code. **No internet, no cables,
 no Bluetooth, no pairing.**
 
+## ✨ Try it now
+
+| | |
+|---|---|
+| **Open the app** | **https://ziado000.github.io/beamdrop/** |
+| Send a file | https://ziado000.github.io/beamdrop/send.html |
+| Receive a file | https://ziado000.github.io/beamdrop/receive.html |
+
+No install, no account — open it in any browser, on any device with a screen or a camera.
+
 ## How it works
 
 1. **Sender** opens `send.html`, picks a file, and the screen starts animating: every
