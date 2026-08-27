@@ -407,7 +407,7 @@
   // ---------- detection ----------
   function luminance(data, W, x, y) {
     const o = (y * W + x) * 4;
-    return 0.299 * data[o] + 0.587 * data[o + 1] + 0.114 * data[o + 2];
+    return (data[o] * 77 + data[o + 1] * 151 + data[o + 2] * 28) >> 8;
   }
 
   function otsuThreshold(hist, total) {
@@ -427,19 +427,24 @@
     return thresh;
   }
 
+  // scratch buffers reused across frames (a camera feeds a fixed size)
+  let lumCache = null, binCache = null, cacheSize = -1;
   function binarize(data, W, H) {
-    const lum = new Uint8Array(W * H);
-    const hist = new Uint32Array(256);
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) {
-        const l = luminance(data, W, x, y) | 0;
-        lum[y * W + x] = l;
-        hist[l]++;
-      }
+    const n = W * H;
+    if (cacheSize !== n) {
+      lumCache = new Uint8Array(n);
+      binCache = new Uint8Array(n);
+      cacheSize = n;
     }
-    const t = otsuThreshold(hist, W * H);
-    const bin = new Uint8Array(W * H);
-    for (let i = 0; i < lum.length; i++) bin[i] = lum[i] > t ? 1 : 0;
+    const lum = lumCache, bin = binCache;
+    const hist = new Uint32Array(256);
+    for (let i = 0, p = 0; i < n; i++, p += 4) {
+      const l = (data[p] * 77 + data[p + 1] * 151 + data[p + 2] * 28) >> 8;
+      lum[i] = l;
+      hist[l]++;
+    }
+    const t = otsuThreshold(hist, n);
+    for (let i = 0; i < n; i++) bin[i] = lum[i] > t ? 1 : 0;
     return bin;
   }
 
@@ -505,11 +510,12 @@
       .filter((c) => c.n >= 2)
       .map((c) => ({ x: c.x / c.n, y: c.y / c.n, unit: c.u / c.n, n: c.n }))
       .sort((a, b) => b.n - a.n)
-      .slice(0, 8);
+      .slice(0, 16); // enough for 4 tiled codes (12 finders) plus noise
   }
 
-  function pickTriple(cs) {
-    let best = null;
+  // All plausible finder triples, best score first.
+  function listTriples(cs) {
+    const out = [];
     for (let a = 0; a < cs.length; a++) {
       for (let b = 0; b < cs.length; b++) {
         for (let c = b + 1; c < cs.length; c++) {
@@ -522,16 +528,22 @@
           if (ratio < 0.65 || ratio > 1.55) continue;
           const cos = Math.abs((v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2));
           if (cos > 0.3) continue;
-          const score = cos + Math.abs(1 - ratio) * 0.3;
-          if (!best || score < best.score) best = { score, corner: cs[a], p1: cs[b], p2: cs[c] };
+          out.push({ score: cos + Math.abs(1 - ratio) * 0.3, corner: cs[a], p1: cs[b], p2: cs[c] });
         }
       }
     }
-    if (!best) return null;
+    return out.sort((a, b) => a.score - b.score);
+  }
+
+  function orientTriple({ corner, p1, p2 }) {
     // assign TR/BL by cross product sign (image y is down)
-    const { corner, p1, p2 } = best;
     const cross = (p1.x - corner.x) * (p2.y - corner.y) - (p1.y - corner.y) * (p2.x - corner.x);
     return cross > 0 ? { tl: corner, tr: p1, bl: p2 } : { tl: corner, tr: p2, bl: p1 };
+  }
+
+  function pickTriple(cs) {
+    const t = listTriples(cs)[0];
+    return t ? orientTriple(t) : null;
   }
 
   function refineAlign(data, W, H, px, py, radius) {
@@ -559,7 +571,7 @@
       }
     }
     if (!sw) return null;
-    return [sx / sw, sy / sw];
+    return [sx / sw, sy / sw, peak];
   }
 
   // Solve homography H (code -> image) from 4 correspondences.
@@ -608,27 +620,72 @@
   }
 
   /*
-   * Decode a camera frame (RGBA data, W, H). Returns the fountain packet bytes
-   * or null. Tries every density layout against the located code.
+   * Decode every honeycomb visible in a camera frame (RGBA data, W, H).
+   * Returns an array of fountain packets (possibly empty). Tiled senders show
+   * up to 4 codes at once; greedy triple extraction peels them off one by one.
    */
-  function decodeFrame(data, W, H) {
+  let lastGoodCols = null;
+  function decodeFrames(data, W, H, maxCodes = 4) {
     const bin = binarize(data, W, H);
     const cands = findFinderCandidates(bin, W, H);
-    if (cands.length < 3) return null;
-    const triple = pickTriple(cands);
-    if (!triple) return null;
+    if (cands.length < 3) return [];
+    const packets = [];
+    const used = new Set();
+    let attempts = 0, probes = 0;
+    for (const t of listTriples(cands)) {
+      if (packets.length >= maxCodes || attempts >= 12 || probes >= 48) break;
+      if (used.has(t.corner) || used.has(t.p1) || used.has(t.p2)) continue;
+      probes++;
+      const result = decodeOneCode(data, W, H, orientTriple(t));
+      if (result === PROBE_FAIL) continue; // cheap rejection, no attempt spent
+      attempts++;
+      if (result) {
+        packets.push(result);
+        used.add(t.corner); used.add(t.p1); used.add(t.p2);
+      }
+    }
+    return packets;
+  }
+
+  const PROBE_FAIL = Symbol('probe-fail');
+
+  function decodeFrame(data, W, H) {
+    return decodeFrames(data, W, H, 1)[0] || null;
+  }
+
+  function decodeOneCode(data, W, H, triple) {
     const { tl, tr, bl } = triple;
     const predicted = [tr.x + bl.x - tl.x, tr.y + bl.y - tl.y];
     const armLen = Math.hypot(tr.x - tl.x, tr.y - tl.y);
     const align = refineAlign(data, W, H, predicted[0], predicted[1], Math.max(14, armLen * 0.09));
-    if (!align) return null;
+    if (!align) return PROBE_FAIL;
     const h = homography(
       [[FC, FC], [CANVAS - FC, FC], [FC, CANVAS - FC], [ALIGN, ALIGN]],
-      [[tl.x, tl.y], [tr.x, tr.y], [bl.x, bl.y], align]
+      [[tl.x, tl.y], [tr.x, tr.y], [bl.x, bl.y], [align[0], align[1]]]
     );
-    if (!h) return null;
+    if (!h) return PROBE_FAIL;
 
-    for (const cols of LAYOUT_COLS) {
+    // Structural probe: a ring just outside the alignment disk must be dark
+    // background. A fake triple (finder combinations across tiled codes) puts
+    // a big bright finder there instead — reject it before expensive sampling.
+    const peak = align[2];
+    let darkCount = 0, probed = 0;
+    for (let k = 0; k < 8; k++) {
+      const ang = (k / 8) * Math.PI * 2;
+      const [px, py] = project(h, ALIGN + Math.cos(ang) * 34, ALIGN + Math.sin(ang) * 34);
+      const rgb = sampleRGB(data, W, H, px, py);
+      if (!rgb) continue;
+      probed++;
+      const lum = (rgb[0] * 77 + rgb[1] * 151 + rgb[2] * 28) >> 8;
+      if (lum < peak * 0.4) darkCount++;
+    }
+    if (probed < 5 || darkCount < probed - 2) return PROBE_FAIL;
+
+    // try the density that worked last frame first — streams don't switch density
+    const order = lastGoodCols
+      ? [lastGoodCols, ...LAYOUT_COLS.filter((c) => c !== lastGoodCols)]
+      : LAYOUT_COLS;
+    for (const cols of order) {
       const layout = layoutFor(cols);
       // calibration palette: average the two samples of each color
       const pal = [];
@@ -667,14 +724,14 @@
         stream[i >> 3] |= bits[i] << (7 - (i & 7));
       }
       const packet = decodeFrameBytes(stream, layout);
-      if (packet) return packet;
+      if (packet) { lastGoodCols = cols; return packet; }
     }
     return null;
   }
 
   return {
     CANVAS, LAYOUT_COLS,
-    layoutFor, capacityFor, palette, render, decodeFrame,
+    layoutFor, capacityFor, palette, render, decodeFrame, decodeFrames,
     _internals: {
       rsEncode, rsDecode, crc32, encodeFrameBytes, decodeFrameBytes, homography, project, NSYM,
       binarize, findFinderCandidates, pickTriple, refineAlign, sampleRGB,

@@ -1,5 +1,5 @@
 /* Beamdrop service worker — cache everything so the app works with internet cut. */
-const CACHE = 'beamdrop-v3';
+const CACHE = 'beamdrop-v4';
 const ASSETS = [
   './',
   'index.html',
@@ -10,6 +10,7 @@ const ASSETS = [
   'hexcodec.js',
   'send.js',
   'receive.js',
+  'scan-worker.js',
   'sw.js',
 ];
 

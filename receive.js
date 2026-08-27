@@ -26,6 +26,25 @@
   let packetsSeen = 0;
   let blobUrl = null;
 
+  // decode off the main thread when workers are available
+  let worker = null, workerBusy = false;
+  try {
+    worker = new Worker('scan-worker.js');
+    worker.onmessage = (e) => {
+      workerBusy = false;
+      if (!running || !decoder) return;
+      for (const buf of e.data.packets) {
+        packetsSeen++;
+        decoder.addPacket(new Uint8Array(buf));
+      }
+      if (e.data.packets.length) updateProgress();
+      if (decoder.done) finish();
+    };
+    worker.onerror = () => { worker = null; };
+  } catch (err) {
+    worker = null;
+  }
+
   camBtn.addEventListener('click', start);
   cancelBtn.addEventListener('click', reset);
   againBtn.addEventListener('click', reset);
@@ -55,19 +74,21 @@
 
   function tick() {
     if (!running) return;
-    if (video.readyState >= 2) {
-      // Scan a downscaled frame — plenty for jsQR, much faster per frame.
-      const scale = Math.min(1, 800 / video.videoWidth);
+    if (video.readyState >= 2 && !(worker && workerBusy)) {
+      // Downscale before decoding — plenty of resolution, much faster per frame.
+      const scale = Math.min(1, 1000 / video.videoWidth);
       const w = Math.round(video.videoWidth * scale);
       const h = Math.round(video.videoHeight * scale);
       if (grab.width !== w) { grab.width = w; grab.height = h; }
       gctx.drawImage(video, 0, 0, w, h);
       const img = gctx.getImageData(0, 0, w, h);
-      const packet = HexCodec.decodeFrame(img.data, w, h);
-      if (packet) {
-        packetsSeen++;
-        decoder.addPacket(packet);
-        updateProgress();
+      if (worker) {
+        workerBusy = true;
+        worker.postMessage({ buf: img.data.buffer, W: w, H: h }, [img.data.buffer]);
+      } else {
+        const packets = HexCodec.decodeFrames(img.data, w, h, 4);
+        for (const p of packets) { packetsSeen++; decoder.addPacket(p); }
+        if (packets.length) updateProgress();
         if (decoder.done) { finish(); return; }
       }
     }

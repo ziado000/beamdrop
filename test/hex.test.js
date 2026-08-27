@@ -38,8 +38,8 @@ const { rsEncode, rsDecode, homography, project, NSYM } = HexCodec._internals;
 
 // ---------- camera simulation ----------
 function simulateCamera(codeBuf, opts = {}) {
-  const CW = 800, CH = 600;
-  const S = HexCodec.CANVAS;
+  const CW = opts.outW || 800, CH = opts.outH || 600;
+  const S = opts.side || HexCodec.CANVAS;
   const quad = opts.quad || [[150, 60], [655, 85], [635, 555], [140, 530]];
   const H = homography([[0, 0], [S, 0], [S, S], [0, S]], quad);
   // invert: camera -> code
@@ -161,6 +161,57 @@ for (const cols of HexCodec.LAYOUT_COLS) {
   if (meta.name !== 'aurora.bin' || got.length !== size) throw new Error('transfer meta mismatch');
   for (let i = 0; i < size; i++) if (got[i] !== fileBytes[i]) throw new Error(`transfer byte mismatch @${i}`);
   console.log(`PASS transfer: 30KB in ${frames} frames shown, ${caught} decoded (K=${enc.K})`);
+})();
+
+// ---------- 5: tiled 2x2 multi-code decode ----------
+(function testTiles() {
+  const cols = HexCodec.LAYOUT_COLS[1];
+  const S = HexCodec.CANVAS;
+  const cap = HexCodec.capacityFor(cols);
+  const chunk = cap - 19;
+  const fileBytes = new Uint8Array(chunk * 8).map((_, i) => (i * 17 + 3) & 0xff);
+  const enc = Fountain.createEncoder(fileBytes, { name: 't', type: 'b', size: fileBytes.length }, chunk);
+
+  const composite = new Uint8ClampedArray(S * 2 * S * 2 * 4);
+  const sent = [];
+  const POS = [[0, 0], [1, 0], [0, 1], [1, 1]];
+  POS.forEach(([tx, ty], i) => {
+    const packet = enc.nextPacket();
+    sent.push(packet);
+    const buf = HexCodec.render(packet, cols, i * 90);
+    for (let y = 0; y < S; y++) {
+      const srcOff = y * S * 4;
+      const dstOff = ((ty * S + y) * S * 2 + tx * S) * 4;
+      composite.set(buf.subarray(srcOff, srcOff + S * 4), dstOff);
+    }
+  });
+
+  const { data, W, H } = simulateCamera(composite, {
+    side: S * 2, outW: 1000, outH: 750,
+    quad: [[110, 40], [910, 60], [890, 700], [100, 680]],
+    blur: 1, noise: 4,
+  });
+  const packets = HexCodec.decodeFrames(data, W, H, 4);
+  const sentKeys = new Set(sent.map((p) => p.join(',')));
+  const good = packets.filter((p) => sentKeys.has(Array.from(p).join(','))).length;
+  console.log(`${good >= 3 ? 'PASS' : 'FAIL'} tiled 2x2: ${good}/4 codes decoded from one camera frame`);
+  if (good < 3) throw new Error('tiled decode rate too low');
+})();
+
+// ---------- 6: decode speed benchmark ----------
+(function benchmark() {
+  const cols = HexCodec.LAYOUT_COLS[1];
+  const chunk = HexCodec.capacityFor(cols) - 19;
+  const fileBytes = new Uint8Array(chunk * 2).map((_, i) => (i * 7 + 1) & 0xff);
+  const enc = Fountain.createEncoder(fileBytes, { name: 'b', type: 'b', size: fileBytes.length }, chunk);
+  const buf = HexCodec.render(enc.nextPacket(), cols, 200);
+  const { data, W, H } = simulateCamera(buf, { blur: 1, noise: 4 });
+  HexCodec.decodeFrame(data, W, H); // warm caches
+  const N = 20;
+  const t0 = process.hrtime.bigint();
+  for (let i = 0; i < N; i++) HexCodec.decodeFrame(data, W, H);
+  const ms = Number(process.hrtime.bigint() - t0) / 1e6 / N;
+  console.log(`BENCH decode: ${ms.toFixed(1)} ms/frame (${(1000 / ms).toFixed(0)} fps ceiling) at ${W}x${H}`);
 })();
 
 console.log('All aurora codec tests passed.');

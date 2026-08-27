@@ -40,9 +40,11 @@ Reed-Solomon error correction shrugs off misread cells.
 | Balanced | 303 B | Good default |
 | Dense | 478 B | Fastest, hold the camera closer |
 | Speed | 5 · 8 · 12 fps | Faster needs a steadier camera |
+| Tiles | 1 · 2 · 4 honeycombs at once | More tiles = multiplied speed, closer camera |
 
-Dense × Rapid moves ~5.7 KB/s — a 100 KB photo in under 20 seconds of clean
-scanning. Bigger files scale linearly.
+Dense × Rapid × Quad moves ~22 KB/s — a 1 MB file in under a minute of clean
+scanning. The receiver decodes in a Web Worker, so the camera preview never
+stutters while it churns through frames.
 
 ## Running locally
 
