@@ -135,23 +135,15 @@
   const renderScale = gpuBlur ? Math.min(2, window.devicePixelRatio || 1) : 1;
 
   function drawAnchors(x0, y0, k) {
-    const { MARGIN, FINDER, ALIGN, ALIGN_R } = HexCodec.GEOM;
+    // the crisp light frame is the only structure the code shows
+    const { MARGIN, BORDER } = HexCodec.GEOM;
     const S = HexCodec.CANVAS;
-    const u = FINDER / 7;
     ctx.save();
     ctx.translate(x0 * k, y0 * k);
     ctx.scale(k, k);
-    for (const [fx, fy] of [[MARGIN, MARGIN], [S - MARGIN - FINDER, MARGIN], [MARGIN, S - MARGIN - FINDER]]) {
-      ctx.fillStyle = '#f5f6fa';
-      ctx.fillRect(fx, fy, FINDER, FINDER);
-      ctx.fillStyle = '#0b0c14';
-      ctx.fillRect(fx + u, fy + u, FINDER - 2 * u, FINDER - 2 * u);
-      ctx.fillStyle = '#f5f6fa';
-      ctx.fillRect(fx + 2 * u, fy + 2 * u, FINDER - 4 * u, FINDER - 4 * u);
-    }
-    ctx.beginPath();
-    ctx.arc(ALIGN, ALIGN, ALIGN_R, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.strokeStyle = '#f5f6fa';
+    ctx.lineWidth = BORDER;
+    ctx.strokeRect(MARGIN + BORDER / 2, MARGIN + BORDER / 2, S - 2 * MARGIN - BORDER, S - 2 * MARGIN - BORDER);
     ctx.restore();
   }
 

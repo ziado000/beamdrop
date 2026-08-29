@@ -26,25 +26,29 @@ You can start watching mid-beam and the progress bar only ever goes up.
 
 ## The Aurora honeycomb
 
-The code is a flowing field of melted color — no visible cells, no grid, just
-an aurora sliding through the spectrum. Underneath, the colors *are* the data:
-each point of the field carries 3 bits as one of 8 hues, blurred into its
-neighbors for the look while staying pure enough at its center to read.
-Calibration cells drift with the palette, so the receiver re-learns the colors
-on every frame under any lighting, and Reed-Solomon error correction shrugs
-off misread cells.
+The code is a flowing field of melted color inside a thin light frame — no
+markers, no squares, no dots, no grid. The frame's own edge is the geometry:
+the receiver finds the glowing quadrilateral, takes its corners for the
+perspective math, and tries all four rotations — error correction instantly
+rejects the three wrong ones, so no orientation mark is needed either.
+
+Underneath, the colors *are* the data: each point of the field carries 3 bits
+as one of 8 hues, blurred into its neighbors for the look while staying pure
+enough at its center to read. Calibration cells drift with the palette, so the
+receiver re-learns the colors on every frame under any lighting, and
+Reed-Solomon error correction shrugs off misread cells.
 
 ## Tuning
 
 | Setting | Per frame | Tradeoff |
 |---|---|---|
-| Compact | 182 B | Easiest to scan at distance |
-| Balanced | 303 B | Good default |
-| Dense | 478 B | Fastest, hold the camera closer |
+| Compact | 139 B | Easiest to scan at distance |
+| Balanced | 339 B | Good default |
+| Dense | 529 B | Fastest, hold the camera closer |
 | Speed | 5 · 8 · 12 fps | Faster needs a steadier camera |
 | Tiles | 1 · 2 · 4 honeycombs at once | More tiles = multiplied speed, closer camera |
 
-Dense × Rapid × Quad moves ~22 KB/s — a 1 MB file in under a minute of clean
+Dense × Rapid × Quad moves ~25 KB/s — a 1 MB file in under a minute of clean
 scanning. The receiver decodes in a Web Worker, so the camera preview never
 stutters while it churns through frames.
 

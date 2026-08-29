@@ -23,11 +23,8 @@
   'use strict';
 
   const CANVAS = 720;
-  const MARGIN = 26;
-  const FINDER = 84;              // finder box edge (7 units of 12px)
-  const FC = MARGIN + FINDER / 2; // finder center offset: 68
-  const ALIGN = CANVAS - FC;      // 652: align disk sits at the parallelogram point
-  const ALIGN_R = 15;
+  const MARGIN = 20;   // dark surround outside the frame
+  const BORDER = 6;    // crisp light frame — the only structure the code shows
   const NSYM = 64;                // RS parity bytes per block (corrects 32)
   const CALIB = 16;               // calibration cells (8 colors x 2)
   const LAYOUT_COLS = [26, 34, 42];
@@ -59,23 +56,16 @@
   const layoutCache = {};
   function layoutFor(cols) {
     if (layoutCache[cols]) return layoutCache[cols];
-    const inner = MARGIN + 8;
+    // field sits flush against the frame — any dark gap would split the
+    // binarized blob into frame + field and wreck corner detection
+    const inner = MARGIN + BORDER;
     const usable = CANVAS - inner * 2;
     const colSpacing = usable / cols;
     const R = colSpacing / Math.sqrt(3);
     const rowSpacing = 1.5 * R;
     const rows = Math.floor((usable - R) / rowSpacing);
 
-    const pad = 10;
-    const zones = [
-      [MARGIN - pad, MARGIN - pad, MARGIN + FINDER + pad, MARGIN + FINDER + pad],
-      [CANVAS - MARGIN - FINDER - pad, MARGIN - pad, CANVAS - MARGIN + pad, MARGIN + FINDER + pad],
-      [MARGIN - pad, CANVAS - MARGIN - FINDER - pad, MARGIN + FINDER + pad, CANVAS - MARGIN + pad],
-      [ALIGN - ALIGN_R - pad, ALIGN - ALIGN_R - pad, ALIGN + ALIGN_R + pad, ALIGN + ALIGN_R + pad],
-    ];
-    const blocked = (x, y) =>
-      zones.some(([x0, y0, x1, y1]) => x > x0 - R && x < x1 + R && y > y0 - R && y < y1 + R);
-
+    // no reserved zones — the frame is the only structure, cells fill everything
     const cells = [];
     for (let row = 0; row < rows; row++) {
       const cy = inner + R + row * rowSpacing;
@@ -83,7 +73,7 @@
       for (let col = 0; col < cols; col++) {
         const cx = inner + colSpacing / 2 + off + col * colSpacing;
         if (cx + R * 0.8 > CANVAS - inner) continue;
-        if (!blocked(cx, cy)) cells.push([cx, cy]);
+        cells.push([cx, cy]);
       }
     }
     const layout = { cols, R, cells, dataCells: cells.length - CALIB };
@@ -379,24 +369,13 @@
     }
   }
 
-  function fillDisk(buf, W, cx, cy, r, rgb) {
-    for (let y = Math.ceil(cy - r); y <= cy + r; y++) {
-      for (let x = Math.ceil(cx - r); x <= cx + r; x++) {
-        if (x < 0 || y < 0 || x >= W || y >= W) continue;
-        if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) {
-          const o = (y * W + x) * 4;
-          buf[o] = rgb[0]; buf[o + 1] = rgb[1]; buf[o + 2] = rgb[2]; buf[o + 3] = 255;
-        }
-      }
-    }
-  }
-
-  function drawFinder(buf, W, x0, y0) {
-    const u = FINDER / 7;
+  function drawBorderJS(buf, W) {
     const WHITE = [245, 246, 250];
-    fillRect(buf, W, x0, y0, x0 + FINDER, y0 + FINDER, WHITE);
-    fillRect(buf, W, x0 + u, y0 + u, x0 + FINDER - u, y0 + FINDER - u, BG);
-    fillRect(buf, W, x0 + 2 * u, y0 + 2 * u, x0 + FINDER - 2 * u, y0 + FINDER - 2 * u, WHITE);
+    const a = MARGIN, b = CANVAS - MARGIN;
+    fillRect(buf, W, a, a, b, a + BORDER, WHITE);
+    fillRect(buf, W, a, b - BORDER, b, b, WHITE);
+    fillRect(buf, W, a, a, a + BORDER, b, WHITE);
+    fillRect(buf, W, b - BORDER, a, b, b, WHITE);
   }
 
   /*
@@ -436,11 +415,8 @@
     const blurR = blurRadiusFor(cols);
     boxBlur(buf, CANVAS, CANVAS, blurR);
     boxBlur(buf, CANVAS, CANVAS, blurR);
-    // anchors go on top of the melted field so they stay crisp for detection
-    drawFinder(buf, CANVAS, MARGIN, MARGIN);
-    drawFinder(buf, CANVAS, CANVAS - MARGIN - FINDER, MARGIN);
-    drawFinder(buf, CANVAS, MARGIN, CANVAS - MARGIN - FINDER);
-    fillDisk(buf, CANVAS, ALIGN, ALIGN, ALIGN_R, [245, 246, 250]);
+    // the frame goes on top of the melted field so its edge stays crisp
+    drawBorderJS(buf, CANVAS);
     return buf;
   }
 
@@ -452,11 +428,6 @@
   }
 
   // ---------- detection ----------
-  function luminance(data, W, x, y) {
-    const o = (y * W + x) * 4;
-    return (data[o] * 77 + data[o + 1] * 151 + data[o + 2] * 28) >> 8;
-  }
-
   function otsuThreshold(hist, total) {
     let sum = 0;
     for (let i = 0; i < 256; i++) sum += i * hist[i];
@@ -490,135 +461,215 @@
       lum[i] = l;
       hist[l]++;
     }
-    const t = otsuThreshold(hist, n);
+    let t = otsuThreshold(hist, n);
+    // Bright-scene guard: when most of the frame binarizes bright (lit wall,
+    // light-mode page behind the code), re-split the bright class so only true
+    // highlights — the white frame above all — stay bright.
+    for (let pass = 0; pass < 2; pass++) {
+      let brightCount = 0;
+      for (let i = t + 1; i < 256; i++) brightCount += hist[i];
+      if (brightCount <= n * 0.55) break;
+      const sub = new Uint32Array(256);
+      for (let i = t + 1; i < 256; i++) sub[i] = hist[i];
+      const t2 = otsuThreshold(sub, brightCount);
+      if (t2 <= t) break;
+      t = t2;
+    }
     for (let i = 0; i < n; i++) bin[i] = lum[i] > t ? 1 : 0;
     return bin;
   }
 
-  function ratioOK(runs) {
-    // bright 1 : dark 1 : bright 3 : dark 1 : bright 1
-    const unit = (runs[0] + runs[1] + runs[2] + runs[3] + runs[4]) / 7;
-    if (unit < 1.5) return false;
-    const tol = unit * 0.65;
-    return Math.abs(runs[0] - unit) < tol && Math.abs(runs[1] - unit) < tol &&
-      Math.abs(runs[2] - 3 * unit) < tol * 1.6 && Math.abs(runs[3] - unit) < tol &&
-      Math.abs(runs[4] - unit) < tol;
-  }
-
-  function findFinderCandidates(bin, W, H) {
-    const at = (x, y) => bin[y * W + x];
-    const cands = [];
-    for (let y = 0; y < H; y += 2) {
-      const runs = []; // [value, length, startX]
-      let x = 0;
-      while (x < W) {
-        const v = bin[y * W + x];
-        let len = 0; const sx = x;
-        while (x < W && bin[y * W + x] === v) { x++; len++; }
-        runs.push([v, len, sx]);
+  /*
+   * Find glowing quadrilaterals — framed aurora fields — in the binarized
+   * image. Downsample 2x, label connected bright components, take each
+   * component's convex extremes as its corners. The corners of a convex quad
+   * are exactly its extreme points, so no marker is needed: the field's own
+   * frame is the geometry.
+   */
+  let gridCache = null, labelCache = null, gridCacheSize = -1;
+  function findBrightQuads(bin, W, H, maxQuads) {
+    const DS = 2;
+    const gw = Math.floor(W / DS), gh = Math.floor(H / DS);
+    if (gridCacheSize !== gw * gh) {
+      gridCache = new Uint8Array(gw * gh);
+      labelCache = new Int32Array(gw * gh);
+      gridCacheSize = gw * gh;
+    }
+    const g = gridCache, labels = labelCache;
+    labels.fill(-1);
+    for (let y = 0; y < gh; y++) {
+      const row = y * DS * W;
+      for (let x = 0; x < gw; x++) g[y * gw + x] = bin[row + x * DS];
+    }
+    // connected components tracked as per-row x-extents — no per-pixel arrays
+    const comps = [];
+    const stack = [];
+    for (let i = 0; i < g.length; i++) {
+      if (!g[i] || labels[i] !== -1) continue;
+      const id = comps.length;
+      const rows = new Map(); // y -> [minX, maxX]
+      let count = 0;
+      labels[i] = id; stack.push(i);
+      while (stack.length) {
+        const p = stack.pop();
+        const px = p % gw, py = (p / gw) | 0;
+        count++;
+        const r = rows.get(py);
+        if (!r) rows.set(py, [px, px]);
+        else { if (px < r[0]) r[0] = px; if (px > r[1]) r[1] = px; }
+        if (px > 0 && g[p - 1] && labels[p - 1] === -1) { labels[p - 1] = id; stack.push(p - 1); }
+        if (px < gw - 1 && g[p + 1] && labels[p + 1] === -1) { labels[p + 1] = id; stack.push(p + 1); }
+        if (py > 0 && g[p - gw] && labels[p - gw] === -1) { labels[p - gw] = id; stack.push(p - gw); }
+        if (py < gh - 1 && g[p + gw] && labels[p + gw] === -1) { labels[p + gw] = id; stack.push(p + gw); }
       }
-      for (let i = 0; i + 4 < runs.length; i++) {
-        if (runs[i][0] !== 1) continue;
-        const five = runs.slice(i, i + 5).map((r) => r[1]);
-        if (!ratioOK(five)) continue;
-        const cx = Math.floor(runs[i + 2][2] + runs[i + 2][1] / 2);
-        // vertical verification: (cx, y) sits in the bright center square;
-        // walk out to measure [outer, ring, center, ring, outer] runs.
-        if (at(cx, y) !== 1) continue;
-        let yy = y, upC = 0;
-        while (yy >= 0 && at(cx, yy) === 1) { upC++; yy--; }
-        let darkTop = 0; while (yy >= 0 && at(cx, yy) === 0) { darkTop++; yy--; }
-        let brightTop = 0; while (yy >= 0 && at(cx, yy) === 1) { brightTop++; yy--; }
-        yy = y + 1; let downC = 0;
-        while (yy < H && at(cx, yy) === 1) { downC++; yy++; }
-        let darkBot = 0; while (yy < H && at(cx, yy) === 0) { darkBot++; yy++; }
-        let brightBot = 0; while (yy < H && at(cx, yy) === 1) { brightBot++; yy++; }
-        const center = upC + downC;
-        const vfive = [brightTop, darkTop, center, darkBot, brightBot];
-        if (!ratioOK(vfive)) continue;
-        const hUnit = five.reduce((a, b) => a + b, 0) / 7;
-        const vUnit = vfive.reduce((a, b) => a + b, 0) / 7;
-        if (hUnit / vUnit > 1.8 || vUnit / hUnit > 1.8) continue;
-        const cy = y - upC + 1 + center / 2;
-        cands.push([cx, cy, (hUnit + vUnit) / 2]);
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      for (const [y, r] of rows) {
+        if (y < y0) y0 = y; if (y > y1) y1 = y;
+        if (r[0] < x0) x0 = r[0]; if (r[1] > x1) x1 = r[1];
+      }
+      comps.push({ rows, count, x0, y0, x1, y1 });
+    }
+    // Merge nested components. Two safe cases: (1) frame ring + field with a
+    // near-identical bbox (they binarized separately across a small gap), and
+    // (2) a HOLLOW outer component (fill ratio << 1 — a frame ring) absorbing
+    // anything inside it: interior blobs can't move a ring's extremes. A SOLID
+    // bright surround (lit wall) must NOT swallow a code nested in its bbox —
+    // the code stays its own candidate and RS/CRC rejects the wall's quad.
+    comps.sort((a, b) => b.count - a.count);
+    for (let i = 0; i < comps.length; i++) {
+      if (!comps[i]) continue;
+      const bi = comps[i];
+      const areaI = (bi.x1 - bi.x0 + 1) * (bi.y1 - bi.y0 + 1);
+      const hollowI = bi.count < areaI * 0.5;
+      for (let j = i + 1; j < comps.length; j++) {
+        if (!comps[j]) continue;
+        const bj = comps[j];
+        if (bj.x0 < bi.x0 - 6 || bj.x1 > bi.x1 + 6 || bj.y0 < bi.y0 - 6 || bj.y1 > bi.y1 + 6) continue;
+        const areaJ = (bj.x1 - bj.x0 + 1) * (bj.y1 - bj.y0 + 1);
+        if (!hollowI && areaJ < areaI * 0.6) continue; // solid surround: keep nested candidates
+        for (const [y, r] of bj.rows) {
+          const ri = bi.rows.get(y);
+          if (!ri) bi.rows.set(y, [r[0], r[1]]);
+          else { if (r[0] < ri[0]) ri[0] = r[0]; if (r[1] > ri[1]) ri[1] = r[1]; }
+        }
+        bi.count += bj.count;
+        comps[j] = null;
       }
     }
-    // cluster
-    const clusters = [];
-    for (const [x, y, u] of cands) {
-      let hit = null;
-      for (const c of clusters) {
-        if (Math.abs(c.x / c.n - x) < 14 && Math.abs(c.y / c.n - y) < 14) { hit = c; break; }
+    comps.sort((a, b) => (b ? b.count : 0) - (a ? a.count : 0));
+
+    const minCount = 250; // absolute (~1000 image px) — independent of camera resolution
+    const quads = [];
+    for (const comp of comps) {
+      if (!comp) continue;
+      if (quads.length >= maxQuads + 4) break;
+      if (comp.count < minCount) continue;
+      // boundary points (2 per row) -> convex hull -> max-area inscribed quad.
+      // The old "farthest point" heuristic broke on keystone trapezoids where
+      // the farthest point from a corner is an ADJACENT corner.
+      const boundary = [];
+      for (const [y, r] of comp.rows) { boundary.push([r[0], y]); if (r[1] !== r[0]) boundary.push([r[1], y]); }
+      if (boundary.length < 4) continue;
+      const hull = convexHull(boundary);
+      const verts = simplifyHull(hull, 16);
+      if (verts.length < 4) continue;
+      const four = maxAreaQuad(verts);
+      if (!four) continue;
+      let mx = 0, my = 0;
+      for (const p of four) { mx += p[0]; my += p[1]; }
+      mx = (mx / 4) * DS; my = (my / 4) * DS;
+      const corners = four.map((p) =>
+        refineCorner(bin, W, H, p[0] * DS + DS / 2, p[1] * DS + DS / 2, mx, my));
+      // clockwise order (image y is down: ascending atan2 = clockwise on screen)
+      corners.sort((p, q) => Math.atan2(p[1] - my, p[0] - mx) - Math.atan2(q[1] - my, q[0] - mx));
+      let ok = true;
+      for (let k = 0; k < 4; k++) {
+        const p = corners[k], q = corners[(k + 1) % 4];
+        if (Math.hypot(q[0] - p[0], q[1] - p[1]) < 40) { ok = false; break; }
       }
-      if (hit) { hit.x += x; hit.y += y; hit.u += u; hit.n++; }
-      else clusters.push({ x, y, u, n: 1 });
+      if (ok) quads.push({ corners, size: comp.count });
     }
-    return clusters
-      .filter((c) => c.n >= 2)
-      .map((c) => ({ x: c.x / c.n, y: c.y / c.n, unit: c.u / c.n, n: c.n }))
-      .sort((a, b) => b.n - a.n)
-      .slice(0, 16); // enough for 4 tiled codes (12 finders) plus noise
+    return quads;
   }
 
-  // All plausible finder triples, best score first.
-  function listTriples(cs) {
-    const out = [];
-    for (let a = 0; a < cs.length; a++) {
-      for (let b = 0; b < cs.length; b++) {
-        for (let c = b + 1; c < cs.length; c++) {
-          if (a === b || a === c) continue;
-          const v1 = [cs[b].x - cs[a].x, cs[b].y - cs[a].y];
-          const v2 = [cs[c].x - cs[a].x, cs[c].y - cs[a].y];
-          const l1 = Math.hypot(...v1), l2 = Math.hypot(...v2);
-          if (l1 < 40 || l2 < 40) continue;
-          const ratio = l1 / l2;
-          if (ratio < 0.65 || ratio > 1.55) continue;
-          const cos = Math.abs((v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2));
-          if (cos > 0.3) continue;
-          out.push({ score: cos + Math.abs(1 - ratio) * 0.3, corner: cs[a], p1: cs[b], p2: cs[c] });
+  function convexHull(pts) {
+    pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cross = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lower = [], upper = [];
+    for (const p of pts) {
+      while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) lower.pop();
+      lower.push(p);
+    }
+    for (let i = pts.length - 1; i >= 0; i--) {
+      const p = pts[i];
+      while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) upper.pop();
+      upper.push(p);
+    }
+    lower.pop(); upper.pop();
+    return lower.concat(upper);
+  }
+
+  // Drop near-collinear hull vertices until at most maxVerts remain.
+  function simplifyHull(hull, maxVerts) {
+    const verts = hull.slice();
+    const deviation = (i) => {
+      const a = verts[(i + verts.length - 1) % verts.length];
+      const b = verts[i];
+      const c = verts[(i + 1) % verts.length];
+      const num = Math.abs((c[0] - a[0]) * (a[1] - b[1]) - (a[0] - b[0]) * (c[1] - a[1]));
+      return num / (Math.hypot(c[0] - a[0], c[1] - a[1]) || 1);
+    };
+    while (verts.length > 4) {
+      let minI = -1, minD = Infinity;
+      for (let i = 0; i < verts.length; i++) {
+        const d = deviation(i);
+        if (d < minD) { minD = d; minI = i; }
+      }
+      if (verts.length <= maxVerts && minD > 1.5) break;
+      verts.splice(minI, 1);
+    }
+    return verts;
+  }
+
+  // Max-area quadrilateral over a small convex polygon (indices in hull order).
+  function maxAreaQuad(verts) {
+    const n = verts.length;
+    if (n === 4) return verts.slice();
+    let best = null, bestArea = 0;
+    for (let a = 0; a < n - 3; a++) {
+      for (let b = a + 1; b < n - 2; b++) {
+        for (let c = b + 1; c < n - 1; c++) {
+          for (let d = c + 1; d < n; d++) {
+            const q = [verts[a], verts[b], verts[c], verts[d]];
+            let area = 0;
+            for (let k = 0; k < 4; k++) {
+              const p1 = q[k], p2 = q[(k + 1) % 4];
+              area += p1[0] * p2[1] - p2[0] * p1[1];
+            }
+            area = Math.abs(area) / 2;
+            if (area > bestArea) { bestArea = area; best = q; }
+          }
         }
       }
     }
-    return out.sort((a, b) => a.score - b.score);
+    return best;
   }
 
-  function orientTriple({ corner, p1, p2 }) {
-    // assign TR/BL by cross product sign (image y is down)
-    const cross = (p1.x - corner.x) * (p2.y - corner.y) - (p1.y - corner.y) * (p2.x - corner.x);
-    return cross > 0 ? { tl: corner, tr: p1, bl: p2 } : { tl: corner, tr: p2, bl: p1 };
-  }
-
-  function pickTriple(cs) {
-    const t = listTriples(cs)[0];
-    return t ? orientTriple(t) : null;
-  }
-
-  function refineAlign(data, W, H, px, py, radius) {
-    // stage 1: brightest pixel in the search window (the white disk wins —
-    // colored hexes never reach full white)
-    let peak = 0, mx = px, my = py;
-    const x0 = Math.max(0, px - radius | 0), x1 = Math.min(W - 1, px + radius | 0);
-    const y0 = Math.max(0, py - radius | 0), y1 = Math.min(H - 1, py + radius | 0);
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const l = luminance(data, W, x, y);
-        if (l > peak) { peak = l; mx = x; my = y; }
+  // Recover full-resolution corner precision lost to the 2x downsample: the
+  // bright pixel near the coarse corner that lies farthest from the centroid.
+  function refineCorner(bin, W, H, x, y, cx, cy) {
+    let best = null, bd = -1;
+    const r = 5;
+    const x0 = Math.max(0, (x | 0) - r), x1 = Math.min(W - 1, (x | 0) + r);
+    const y0 = Math.max(0, (y | 0) - r), y1 = Math.min(H - 1, (y | 0) + r);
+    for (let yy = y0; yy <= y1; yy++) {
+      for (let xx = x0; xx <= x1; xx++) {
+        if (!bin[yy * W + xx]) continue;
+        const d = (xx - cx) ** 2 + (yy - cy) ** 2;
+        if (d > bd) { bd = d; best = [xx, yy]; }
       }
     }
-    if (!peak) return null;
-    void mx; void my;
-    // stage 2: centroid of near-peak pixels across the window. Pure white sits
-    // well above every palette color, so only disk pixels survive the cut.
-    const cut = peak * 0.92;
-    let sx = 0, sy = 0, sw = 0;
-    for (let y = y0; y <= y1; y++) {
-      for (let x = x0; x <= x1; x++) {
-        const l = luminance(data, W, x, y);
-        if (l > cut) { const w = l - cut; sx += x * w; sy += y * w; sw += w; }
-      }
-    }
-    if (!sw) return null;
-    return [sx / sw, sy / sw, peak];
+    return best || [x, y];
   }
 
   // Solve homography H (code -> image) from 4 correspondences.
@@ -667,113 +718,90 @@
   }
 
   /*
-   * Decode every honeycomb visible in a camera frame (RGBA data, W, H).
-   * Returns an array of fountain packets (possibly empty). Tiled senders show
-   * up to 4 codes at once; greedy triple extraction peels them off one by one.
+   * Decode every aurora field visible in a camera frame (RGBA data, W, H).
+   * Returns an array of fountain packets (possibly empty). No orientation
+   * marker exists: all 4 rotations are ranked by calibration self-consistency
+   * (the two calibration runs must agree), then RS + CRC settle the truth.
    */
   let lastGoodCols = null;
   function decodeFrames(data, W, H, maxCodes = 4) {
     const bin = binarize(data, W, H);
-    const cands = findFinderCandidates(bin, W, H);
-    if (cands.length < 3) return [];
+    const quads = findBrightQuads(bin, W, H, maxCodes);
     const packets = [];
-    const used = new Set();
-    let attempts = 0, probes = 0;
-    for (const t of listTriples(cands)) {
-      if (packets.length >= maxCodes || attempts >= 12 || probes >= 48) break;
-      if (used.has(t.corner) || used.has(t.p1) || used.has(t.p2)) continue;
-      probes++;
-      const result = decodeOneCode(data, W, H, orientTriple(t));
-      if (result === PROBE_FAIL) continue; // cheap rejection, no attempt spent
-      attempts++;
-      if (result) {
-        packets.push(result);
-        used.add(t.corner); used.add(t.p1); used.add(t.p2);
-      }
+    for (const q of quads) {
+      if (packets.length >= maxCodes) break;
+      const p = decodeQuad(data, W, H, q.corners);
+      if (p) packets.push(p);
     }
     return packets;
   }
-
-  const PROBE_FAIL = Symbol('probe-fail');
 
   function decodeFrame(data, W, H) {
     return decodeFrames(data, W, H, 1)[0] || null;
   }
 
-  function decodeOneCode(data, W, H, triple) {
-    const { tl, tr, bl } = triple;
-    const predicted = [tr.x + bl.x - tl.x, tr.y + bl.y - tl.y];
-    const armLen = Math.hypot(tr.x - tl.x, tr.y - tl.y);
-    const align = refineAlign(data, W, H, predicted[0], predicted[1], Math.max(14, armLen * 0.09));
-    if (!align) return PROBE_FAIL;
-    const h = homography(
-      [[FC, FC], [CANVAS - FC, FC], [FC, CANVAS - FC], [ALIGN, ALIGN]],
-      [[tl.x, tl.y], [tr.x, tr.y], [bl.x, bl.y], [align[0], align[1]]]
-    );
-    if (!h) return PROBE_FAIL;
-
-    // Structural probe: a ring just outside the alignment disk must be dark
-    // background. A fake triple (finder combinations across tiled codes) puts
-    // a big bright finder there instead — reject it before expensive sampling.
-    const peak = align[2];
-    let darkCount = 0, probed = 0;
-    for (let k = 0; k < 8; k++) {
-      const ang = (k / 8) * Math.PI * 2;
-      const [px, py] = project(h, ALIGN + Math.cos(ang) * 34, ALIGN + Math.sin(ang) * 34);
-      const rgb = sampleRGB(data, W, H, px, py);
-      if (!rgb) continue;
-      probed++;
-      const lum = (rgb[0] * 77 + rgb[1] * 151 + rgb[2] * 28) >> 8;
-      if (lum < peak * 0.4) darkCount++;
-    }
-    if (probed < 5 || darkCount < probed - 2) return PROBE_FAIL;
-
-    // try the density that worked last frame first — streams don't switch density
-    const order = lastGoodCols
-      ? [lastGoodCols, ...LAYOUT_COLS.filter((c) => c !== lastGoodCols)]
-      : LAYOUT_COLS;
-    for (const cols of order) {
-      const layout = layoutFor(cols);
-      // calibration palette: average the two samples of each color
-      const pal = [];
-      let ok = true;
-      for (let i = 0; i < 8; i++) {
-        const a = layout.cells[i];
-        const b = layout.cells[layout.cells.length - 8 + i];
-        const pa = sampleRGB(data, W, H, ...project(h, a[0], a[1]));
-        const pb = sampleRGB(data, W, H, ...project(h, b[0], b[1]));
-        if (!pa || !pb) { ok = false; break; }
-        pal.push([(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2]);
-      }
-      if (!ok) continue;
-
-      const order = cellValueOrder(layout);
-      const bits = new Uint8Array(order.length * 3);
-      let bp = 0;
-      for (const idx of order) {
-        const [cx, cy] = layout.cells[idx];
-        const rgb = sampleRGB(data, W, H, ...project(h, cx, cy));
-        if (!rgb) { bp = -1; break; }
-        let bestI = 0, bestD = Infinity;
+  function decodeQuad(data, W, H, corners) {
+    const M = MARGIN;
+    const src = [[M, M], [CANVAS - M, M], [CANVAS - M, CANVAS - M], [M, CANVAS - M]];
+    // rank (winding, density) pairs by how well the two calibration runs agree;
+    // 8 windings = 4 rotations plus their mirror images (flipped camera feeds)
+    const cands = [];
+    for (let w = 0; w < 8; w++) {
+      const rot = w % 4;
+      const dst = w < 4
+        ? [corners[rot], corners[(rot + 1) % 4], corners[(rot + 2) % 4], corners[(rot + 3) % 4]]
+        : [corners[rot], corners[(rot + 3) % 4], corners[(rot + 2) % 4], corners[(rot + 1) % 4]];
+      const h = homography(src, dst);
+      if (!h) continue;
+      for (const cols of LAYOUT_COLS) {
+        const layout = layoutFor(cols);
+        const pal = [];
+        let score = 0, ok = true;
         for (let i = 0; i < 8; i++) {
-          const d = (rgb[0] - pal[i][0]) ** 2 + (rgb[1] - pal[i][1]) ** 2 + (rgb[2] - pal[i][2]) ** 2;
-          if (d < bestD) { bestD = d; bestI = i; }
+          const a = layout.cells[i];
+          const b = layout.cells[layout.cells.length - 8 + i];
+          const pa = sampleRGB(data, W, H, ...project(h, a[0], a[1]));
+          const pb = sampleRGB(data, W, H, ...project(h, b[0], b[1]));
+          if (!pa || !pb) { ok = false; break; }
+          score += (pa[0] - pb[0]) ** 2 + (pa[1] - pb[1]) ** 2 + (pa[2] - pb[2]) ** 2;
+          pal.push([(pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2]);
         }
-        bits[bp++] = (bestI >> 2) & 1;
-        bits[bp++] = (bestI >> 1) & 1;
-        bits[bp++] = bestI & 1;
+        if (!ok) continue;
+        if (cols === lastGoodCols) score *= 0.5; // a stream stays at one density
+        cands.push({ h, layout, pal, cols, score });
       }
-      if (bp < 0) continue;
-
-      const totalBytes = layout.blocks.reduce((a, b) => a + b.total, 0);
-      const stream = new Uint8Array(totalBytes);
-      for (let i = 0; i < totalBytes * 8 && i < bits.length; i++) {
-        stream[i >> 3] |= bits[i] << (7 - (i & 7));
-      }
-      const packet = decodeFrameBytes(stream, layout);
-      if (packet) { lastGoodCols = cols; return packet; }
+    }
+    cands.sort((a, b) => a.score - b.score);
+    for (const c of cands.slice(0, 10)) {
+      const packet = sampleAndDecode(data, W, H, c.h, c.layout, c.pal);
+      if (packet) { lastGoodCols = c.cols; return packet; }
     }
     return null;
+  }
+
+  function sampleAndDecode(data, W, H, h, layout, pal) {
+    const order = cellValueOrder(layout);
+    const bits = new Uint8Array(order.length * 3);
+    let bp = 0;
+    for (const idx of order) {
+      const [cx, cy] = layout.cells[idx];
+      const rgb = sampleRGB(data, W, H, ...project(h, cx, cy));
+      if (!rgb) return null;
+      let bestI = 0, bestD = Infinity;
+      for (let i = 0; i < 8; i++) {
+        const d = (rgb[0] - pal[i][0]) ** 2 + (rgb[1] - pal[i][1]) ** 2 + (rgb[2] - pal[i][2]) ** 2;
+        if (d < bestD) { bestD = d; bestI = i; }
+      }
+      bits[bp++] = (bestI >> 2) & 1;
+      bits[bp++] = (bestI >> 1) & 1;
+      bits[bp++] = bestI & 1;
+    }
+    const totalBytes = layout.blocks.reduce((a, b) => a + b.total, 0);
+    const stream = new Uint8Array(totalBytes);
+    for (let i = 0; i < totalBytes * 8 && i < bits.length; i++) {
+      stream[i >> 3] |= bits[i] << (7 - (i & 7));
+    }
+    return decodeFrameBytes(stream, layout);
   }
 
   function blurRadiusFor(cols) {
@@ -782,11 +810,11 @@
 
   return {
     CANVAS, LAYOUT_COLS,
-    GEOM: { MARGIN, FINDER, ALIGN, ALIGN_R, BG },
+    GEOM: { MARGIN, BORDER, BG },
     layoutFor, capacityFor, palette, render, decodeFrame, decodeFrames, blurRadiusFor,
     _internals: {
       rsEncode, rsDecode, crc32, encodeFrameBytes, decodeFrameBytes, homography, project, NSYM,
-      binarize, findFinderCandidates, pickTriple, refineAlign, sampleRGB,
+      binarize, findBrightQuads, sampleRGB,
     },
   };
 });

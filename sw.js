@@ -1,5 +1,5 @@
 ﻿/* Beamdrop service worker - cache everything so the app works with internet cut. */
-const CACHE = 'beamdrop-v6';
+const CACHE = 'beamdrop-v7';
 const ASSETS = [
   './',
   'index.html',
