@@ -26,11 +26,13 @@ You can start watching mid-beam and the progress bar only ever goes up.
 
 ## The Aurora honeycomb
 
-The code is a living honeycomb where the colors *are* the data: every hexagon
-carries 3 bits as one of 8 hues, and the whole palette drifts through the
-spectrum each frame like an aurora. Calibration cells drift with it, so the
-receiver re-learns the palette on every frame under any lighting, and
-Reed-Solomon error correction shrugs off misread cells.
+The code is a flowing field of melted color — no visible cells, no grid, just
+an aurora sliding through the spectrum. Underneath, the colors *are* the data:
+each point of the field carries 3 bits as one of 8 hues, blurred into its
+neighbors for the look while staying pure enough at its center to read.
+Calibration cells drift with the palette, so the receiver re-learns the colors
+on every frame under any lighting, and Reed-Solomon error correction shrugs
+off misread cells.
 
 ## Tuning
 

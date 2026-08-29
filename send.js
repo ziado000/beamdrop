@@ -127,13 +127,46 @@
 
   const TILE_POS = { 1: [[0, 0]], 2: [[0, 0], [1, 0]], 4: [[0, 0], [1, 0], [0, 1], [1, 1]] };
 
+  // GPU melt path: blur the mosaic with ctx.filter, then draw crisp anchors.
+  const off = document.createElement('canvas');
+  const offctx = off.getContext('2d');
+  const gpuBlur = typeof ctx.filter === 'string';
+
+  function drawAnchors(x0, y0) {
+    const { MARGIN, FINDER, ALIGN, ALIGN_R } = HexCodec.GEOM;
+    const S = HexCodec.CANVAS;
+    const u = FINDER / 7;
+    ctx.fillStyle = '#f5f6fa';
+    for (const [fx, fy] of [[MARGIN, MARGIN], [S - MARGIN - FINDER, MARGIN], [MARGIN, S - MARGIN - FINDER]]) {
+      ctx.fillRect(x0 + fx, y0 + fy, FINDER, FINDER);
+      ctx.fillStyle = '#0b0c14';
+      ctx.fillRect(x0 + fx + u, y0 + fy + u, FINDER - 2 * u, FINDER - 2 * u);
+      ctx.fillStyle = '#f5f6fa';
+      ctx.fillRect(x0 + fx + 2 * u, y0 + fy + 2 * u, FINDER - 4 * u, FINDER - 4 * u);
+    }
+    ctx.beginPath();
+    ctx.arc(x0 + ALIGN, y0 + ALIGN, ALIGN_R, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawNextFrame() {
     const S = HexCodec.CANVAS;
     for (const [tx, ty] of TILE_POS[tiles]) {
       const packet = encoder.nextPacket();
       packetsSent++;
-      const buf = HexCodec.render(packet, AURORA_COLS[density], (packetsSent * 11) % 360);
-      ctx.putImageData(new ImageData(buf, S, S), tx * S, ty * S);
+      if (gpuBlur) {
+        const mosaic = HexCodec.render(packet, AURORA_COLS[density], (packetsSent * 11) % 360, { mosaicOnly: true });
+        if (off.width !== S) { off.width = S; off.height = S; }
+        offctx.putImageData(new ImageData(mosaic, S, S), 0, 0);
+        ctx.save();
+        ctx.filter = `blur(${HexCodec.blurRadiusFor(AURORA_COLS[density])}px)`;
+        ctx.drawImage(off, tx * S, ty * S);
+        ctx.restore();
+        drawAnchors(tx * S, ty * S);
+      } else {
+        const buf = HexCodec.render(packet, AURORA_COLS[density], (packetsSent * 11) % 360);
+        ctx.putImageData(new ImageData(buf, S, S), tx * S, ty * S);
+      }
     }
 
     const K = encoder.K;

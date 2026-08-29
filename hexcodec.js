@@ -338,6 +338,47 @@
     }
   }
 
+  /*
+   * The aurora look: fill the cells as a seamless mosaic, then melt it with a
+   * separable box blur (run twice ≈ gaussian). Cell centers keep enough of
+   * their own color for 3x3 center sampling + Reed-Solomon to classify.
+   */
+  let blurTmp = null;
+  function boxBlur(buf, W, H, r) {
+    if (!blurTmp || blurTmp.length !== buf.length) blurTmp = new Uint8ClampedArray(buf.length);
+    const t = blurTmp;
+    const div = 2 * r + 1;
+    for (let y = 0; y < H; y++) {
+      const row = y * W;
+      let sr = 0, sg = 0, sb = 0;
+      for (let x = -r; x <= r; x++) {
+        const o = (row + Math.min(W - 1, Math.max(0, x))) * 4;
+        sr += buf[o]; sg += buf[o + 1]; sb += buf[o + 2];
+      }
+      for (let x = 0; x < W; x++) {
+        const o = (row + x) * 4;
+        t[o] = sr / div; t[o + 1] = sg / div; t[o + 2] = sb / div; t[o + 3] = 255;
+        const oa = (row + Math.min(W - 1, x + r + 1)) * 4;
+        const ob = (row + Math.max(0, x - r)) * 4;
+        sr += buf[oa] - buf[ob]; sg += buf[oa + 1] - buf[ob + 1]; sb += buf[oa + 2] - buf[ob + 2];
+      }
+    }
+    for (let x = 0; x < W; x++) {
+      let sr = 0, sg = 0, sb = 0;
+      for (let y = -r; y <= r; y++) {
+        const o = (Math.min(H - 1, Math.max(0, y)) * W + x) * 4;
+        sr += t[o]; sg += t[o + 1]; sb += t[o + 2];
+      }
+      for (let y = 0; y < H; y++) {
+        const o = (y * W + x) * 4;
+        buf[o] = sr / div; buf[o + 1] = sg / div; buf[o + 2] = sb / div; buf[o + 3] = 255;
+        const oa = (Math.min(H - 1, y + r + 1) * W + x) * 4;
+        const ob = (Math.max(0, y - r) * W + x) * 4;
+        sr += t[oa] - t[ob]; sg += t[oa + 1] - t[ob + 1]; sb += t[oa + 2] - t[ob + 2];
+      }
+    }
+  }
+
   function fillDisk(buf, W, cx, cy, r, rgb) {
     for (let y = Math.ceil(cy - r); y <= cy + r; y++) {
       for (let x = Math.ceil(cx - r); x <= cx + r; x++) {
@@ -362,7 +403,7 @@
    * Render one frame. cellValues[i] in 0..7 for each layout cell (calibration
    * cells included — pass their fixed values). Returns RGBA Uint8ClampedArray.
    */
-  function render(packet, cols, hueShift) {
+  function render(packet, cols, hueShift, opts) {
     const layout = layoutFor(cols);
     const pal = palette(hueShift);
     const stream = encodeFrameBytes(packet, layout);
@@ -384,16 +425,22 @@
 
     const buf = new Uint8ClampedArray(CANVAS * CANVAS * 4);
     fillRect(buf, CANVAS, 0, 0, CANVAS, CANVAS, BG);
+    // seamless mosaic (slight overlap kills the gaps), then melt it
+    for (let i = 0; i < layout.cells.length; i++) {
+      const [cx, cy] = layout.cells[i];
+      fillHex(buf, CANVAS, cx, cy, layout.R * 1.08, pal[values[i]]);
+    }
+    // mosaicOnly: caller does the melt on the GPU (ctx.filter blur) and draws
+    // the anchors itself — same picture, ~5x faster on the sender.
+    if (opts && opts.mosaicOnly) return buf;
+    const blurR = blurRadiusFor(cols);
+    boxBlur(buf, CANVAS, CANVAS, blurR);
+    boxBlur(buf, CANVAS, CANVAS, blurR);
+    // anchors go on top of the melted field so they stay crisp for detection
     drawFinder(buf, CANVAS, MARGIN, MARGIN);
     drawFinder(buf, CANVAS, CANVAS - MARGIN - FINDER, MARGIN);
     drawFinder(buf, CANVAS, MARGIN, CANVAS - MARGIN - FINDER);
     fillDisk(buf, CANVAS, ALIGN, ALIGN, ALIGN_R, [245, 246, 250]);
-
-    const gap = 0.86;
-    for (let i = 0; i < layout.cells.length; i++) {
-      const [cx, cy] = layout.cells[i];
-      fillHex(buf, CANVAS, cx, cy, layout.R * gap, pal[values[i]]);
-    }
     return buf;
   }
 
@@ -729,9 +776,14 @@
     return null;
   }
 
+  function blurRadiusFor(cols) {
+    return Math.max(2, Math.round(layoutFor(cols).R * 0.55));
+  }
+
   return {
     CANVAS, LAYOUT_COLS,
-    layoutFor, capacityFor, palette, render, decodeFrame, decodeFrames,
+    GEOM: { MARGIN, FINDER, ALIGN, ALIGN_R, BG },
+    layoutFor, capacityFor, palette, render, decodeFrame, decodeFrames, blurRadiusFor,
     _internals: {
       rsEncode, rsDecode, crc32, encodeFrameBytes, decodeFrameBytes, homography, project, NSYM,
       binarize, findFinderCandidates, pickTriple, refineAlign, sampleRGB,
