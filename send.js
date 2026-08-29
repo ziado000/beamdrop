@@ -97,7 +97,7 @@
     packetsSent = 0;
     paused = false;
     pauseBtn.textContent = 'Pause';
-    const S = HexCodec.CANVAS;
+    const S = HexCodec.CANVAS * renderScale;
     canvas.width = tiles >= 2 ? S * 2 : S;
     canvas.height = tiles === 4 ? S * 2 : S;
     setup.classList.add('hidden');
@@ -128,29 +128,36 @@
   const TILE_POS = { 1: [[0, 0]], 2: [[0, 0], [1, 0]], 4: [[0, 0], [1, 0], [0, 1], [1, 1]] };
 
   // GPU melt path: blur the mosaic with ctx.filter, then draw crisp anchors.
+  // Rendered at device resolution (up to 2x) so phones don't upscale to mush.
   const off = document.createElement('canvas');
   const offctx = off.getContext('2d');
   const gpuBlur = typeof ctx.filter === 'string';
+  const renderScale = gpuBlur ? Math.min(2, window.devicePixelRatio || 1) : 1;
 
-  function drawAnchors(x0, y0) {
+  function drawAnchors(x0, y0, k) {
     const { MARGIN, FINDER, ALIGN, ALIGN_R } = HexCodec.GEOM;
     const S = HexCodec.CANVAS;
     const u = FINDER / 7;
-    ctx.fillStyle = '#f5f6fa';
+    ctx.save();
+    ctx.translate(x0 * k, y0 * k);
+    ctx.scale(k, k);
     for (const [fx, fy] of [[MARGIN, MARGIN], [S - MARGIN - FINDER, MARGIN], [MARGIN, S - MARGIN - FINDER]]) {
-      ctx.fillRect(x0 + fx, y0 + fy, FINDER, FINDER);
-      ctx.fillStyle = '#0b0c14';
-      ctx.fillRect(x0 + fx + u, y0 + fy + u, FINDER - 2 * u, FINDER - 2 * u);
       ctx.fillStyle = '#f5f6fa';
-      ctx.fillRect(x0 + fx + 2 * u, y0 + fy + 2 * u, FINDER - 4 * u, FINDER - 4 * u);
+      ctx.fillRect(fx, fy, FINDER, FINDER);
+      ctx.fillStyle = '#0b0c14';
+      ctx.fillRect(fx + u, fy + u, FINDER - 2 * u, FINDER - 2 * u);
+      ctx.fillStyle = '#f5f6fa';
+      ctx.fillRect(fx + 2 * u, fy + 2 * u, FINDER - 4 * u, FINDER - 4 * u);
     }
     ctx.beginPath();
-    ctx.arc(x0 + ALIGN, y0 + ALIGN, ALIGN_R, 0, Math.PI * 2);
+    ctx.arc(ALIGN, ALIGN, ALIGN_R, 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
   }
 
   function drawNextFrame() {
     const S = HexCodec.CANVAS;
+    const k = renderScale;
     for (const [tx, ty] of TILE_POS[tiles]) {
       const packet = encoder.nextPacket();
       packetsSent++;
@@ -159,10 +166,11 @@
         if (off.width !== S) { off.width = S; off.height = S; }
         offctx.putImageData(new ImageData(mosaic, S, S), 0, 0);
         ctx.save();
-        ctx.filter = `blur(${HexCodec.blurRadiusFor(AURORA_COLS[density])}px)`;
-        ctx.drawImage(off, tx * S, ty * S);
+        // 0.8x matches the box-blur the decoder tests are calibrated against
+        ctx.filter = `blur(${(HexCodec.blurRadiusFor(AURORA_COLS[density]) * 0.8 * k).toFixed(1)}px)`;
+        ctx.drawImage(off, tx * S * k, ty * S * k, S * k, S * k);
         ctx.restore();
-        drawAnchors(tx * S, ty * S);
+        drawAnchors(tx * S, ty * S, k);
       } else {
         const buf = HexCodec.render(packet, AURORA_COLS[density], (packetsSent * 11) % 360);
         ctx.putImageData(new ImageData(buf, S, S), tx * S, ty * S);
