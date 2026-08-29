@@ -171,7 +171,7 @@ a.cardlink { text-decoration: none; color: inherit; display: block; }
 
 .stage { display: flex; flex-direction: column; align-items: center; gap: 1.1rem; width: 100%; }
 canvas.beam {
-  width: min(92vw, 560px);
+  width: min(92vw, 680px);
   height: auto;
   border-radius: var(--radius);
   box-shadow: 0 0 60px rgba(124, 108, 255, 0.25);

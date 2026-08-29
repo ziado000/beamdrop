@@ -48,7 +48,7 @@
 
   function palette(hueShift) {
     const p = [];
-    for (let i = 0; i < 8; i++) p.push(hslToRgb(hueShift + i * 45, 85, 55));
+    for (let i = 0; i < 8; i++) p.push(hslToRgb(hueShift + i * 45, 78, 58));
     return p;
   }
 
@@ -805,7 +805,8 @@
   }
 
   function blurRadiusFor(cols) {
-    return Math.max(2, Math.round(layoutFor(cols).R * 0.55));
+    // soft-edge melt: cells flow together without reading as out-of-focus
+    return Math.max(2, Math.round(layoutFor(cols).R * 0.38));
   }
 
   return {
