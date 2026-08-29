@@ -1,4 +1,4 @@
-﻿/* Beamdrop service worker â€” cache everything so the app works with internet cut. */
+﻿/* Beamdrop service worker - cache everything so the app works with internet cut. */
 const CACHE = 'beamdrop-v6';
 const ASSETS = [
   './',
